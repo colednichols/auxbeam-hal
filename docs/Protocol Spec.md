@@ -1,6 +1,6 @@
 # Auxbeam 8-Gang Switch Panel Protocol Specification
 
-This document outlines the reverse-engineered serial interface and protocol used to communicate between the switch panel (Master) and the solid-state relay box (Slave). This information can be used to build accessory devices which communicate directly with the switch panel assembly.
+This document outlines the reverse-engineered serial interface and protocol used to communicate between the switch panel and the solid-state relay box. This information can be used to build accessory devices which communicate directly with the switch panel assembly.
 
 ---
 
@@ -20,8 +20,9 @@ The interconnection between the Master panel and the Slave relay box utilizes a 
 ### 1.2 Bus Electrical Characteristics
 * **Signaling Type:** Dedicated Transmit (TX) and Receive (RX) lines running asynchronous serial communication (UART).
 * **Baud Rate:** 2500 bps.
-* **Voltage:** ?????
-* **Bus Idle State:** Pulled high by ??????. Both data lines are pulled high when no active message frame is being transmitted.
+* **V+ Voltage:** 3.3 V
+* **Logic Voltage:** 3.3V
+* **Bus Idle State:** Pulled high by Relay Box. Both data lines are pulled high when no active message frame is being transmitted.
 * **Driver Configuration:** Line transceivers utilize an **Open-Drain / Open-Collector** layout. Nodes only actively pull the line low to Ground (Logic 0) and float the line for Logic 1.
 
 ---
@@ -152,4 +153,4 @@ When tuning fine-grained register parameters like strobe speed (`Parameter ID = 
 ---
 
 ### 5.3 Local Local-Loopback Commands (Null Response Pattern)
-Some commands, like backlight control command are generated for the master switch panel by the master switch panel. These are set to "loopback," where they are sent on the RX line addressed to the panel. This is interpreted to be an acknowledgement of the internal change. These commands can be sent by another device on that line to change those settings.
+Some commands, like backlight control command are generated for the master switch panel by the master switch panel. These are sent to "loopback," where they are sent on the RX line by the panel and addressed to the panel. This is interpreted to be an acknowledgement of the internal change. These commands can be sent by another device on that line to change those settings.
