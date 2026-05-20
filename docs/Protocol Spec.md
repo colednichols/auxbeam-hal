@@ -141,7 +141,7 @@ Adjusts physical Switch Panel LED parameters.
     * `Byte 6` = **Blue (B)** Intensity ($0 \rightarrow 255$)
 * **Byte 7 (White Channel):** Hard-coded to `0x00` in my unit. Suspected to represent white channel in some iterations.
 
-### 4.5 Global Flash Speed Configuration (`0x0B`)
+### 4.5 Flash Speed Configuration (`0x0B`)
 Modifies the internal flash intervals of the hardware-pulsed strobe configuration.
 * **Byte 3 (Pulse Interval Delay):** Value is length measured in milliseconds. 
     * `0x32` (Decimal 50) = Maximum length (Slowest strobe frequency).
