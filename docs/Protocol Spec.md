@@ -12,7 +12,7 @@ The interconnection between the Master panel and the Slave relay box utilizes a 
 
 | Wire Role | Direction | Description                              |
 | :-------- | :-------- | :--------------------------------------- |
-| **V-**    | Reference | System Ground / Common reference plane.  |
+| **GND**   | Reference | System Ground / Common reference plane.  |
 | **V+**    | Input     | Main DC power supply from the relay box. |
 | **TX**    | Output    | Switch Panel TX -> Relay Box RX.         |
 | **RX**    | Input     | Relay Box TX -> Switch Panel RX          |
@@ -31,31 +31,60 @@ The interconnection between the Master panel and the Slave relay box utilizes a 
 
 The protocol features dynamic frame lengths optimized for specific data contexts. Every valid frame concludes with an **8-bit Modulo 256 Checksum** calculated as the truncated sum of all preceding bytes.
 
-### 2.1 Standard 9-Byte Frame
-Used for runtime control, group creation, and backlight adjustment.
+### 2.1 Runtime Standard 9-Byte Frame 
+Used for runtime control (i.e., controlling switches).
 
-| Byte Offset | Field           | Type | Description                                                |
-| :---------- | :-------------- | :--- | :--------------------------------------------------------- |
-| `0`         | Sequence ID     | `u8` | Rolling counter.                                           |
-| `1`         | Direction       | `u8` | `0x00` = Panel -> Box<br>`0xFF` = Box -> Panel OR Loopback |
-| `2`         | Command ID      | `u8` | Establishes packet context (See Section 3).                |
-| `3`         | Modifier / Flag | `u8` | Secondary command context or internal status flags.        |
-| `4`         | Payload Byte 0  | `u8` | Switch 1 (High Nibble) \| Switch 2 (Low Nibble)            |
-| `5`         | Payload Byte 1  | `u8` | Switch 3 (High Nibble) \| Switch 4 (Low Nibble)            |
-| `6`         | Payload Byte 2  | `u8` | Switch 5 (High Nibble) \| Switch 6 (Low Nibble)            |
-| `7`         | Payload Byte 3  | `u8` | Switch 7 (High Nibble) \| Switch 8 (Low Nibble)            |
-| `8`         | Checksum        | `u8` | Sum of Bytes 0 through 7 modulo 256.                       |
+| Byte Offset | Field          | Type | Description                                                |
+| :---------- | :------------- | :--- | :--------------------------------------------------------- |
+| `0`         | Sequence ID    | `u8` | Rolling counter.                                           |
+| `1`         | Target         | `u8` | `0x00` = Panel -> Box<br>`0xFF` = Box -> Panel OR Loopback |
+| `2`         | Command ID     | `u8` | `0x08` - Establishes packet context (See Section 3).       |
+| `3`         | Switch Count   | `u8` | Count of defined switches (`0x08` for 8-gang)              |
+| `4`         | Payload Byte 0 | `u8` | Switch 1 (High Nibble) \| Switch 2 (Low Nibble)            |
+| `5`         | Payload Byte 1 | `u8` | Switch 3 (High Nibble) \| Switch 4 (Low Nibble)            |
+| `6`         | Payload Byte 2 | `u8` | Switch 5 (High Nibble) \| Switch 6 (Low Nibble)            |
+| `7`         | Payload Byte 3 | `u8` | Switch 7 (High Nibble) \| Switch 8 (Low Nibble)            |
+| `8`         | Checksum       | `u8` | Sum of Bytes 0 through 7 modulo 256.                       |
 
-### 2.2 Global Parameter 5-Byte Frame
+### 2.2 Pulsed Mode Length Setting 5-Byte Frame
 Used for tuning flash/strobe frequency.
 
-| Byte Offset | Field          | Type | Description                                                                                 |
-| :---------- | :------------- | :--- | :------------------------------------------------------------------------------------------ |
-| `0`         | Sequence ID    | `u8` | Rolling counter (Relay box response echoes truncated lower nibble only; e.g. 0x51 -> 0x01). |
-| `1`         | Direction      | `u8` | `0x00` = Panel -> Box<br>`0xFF` = Box -> Panel OR Loopback                                  |
-| `2`         | Parameter ID   | `u8` | Target parameter register (e.g., `0x0B` for pulse length).                                  |
-| `3`         | Register Value | `u8` | Raw configuration data value.                                                               |
-| `4`         | Checksum       | `u8` | Sum of Bytes 0 through 3 modulo 256.                                                        |
+| Byte Offset | Field       | Type | Description                                                                                 |
+| :---------- | :---------- | :--- | :------------------------------------------------------------------------------------------ |
+| `0`         | Sequence ID | `u8` | Rolling counter (Relay box response echoes truncated lower nibble only; e.g. 0x51 -> 0x01). |
+| `1`         | Target      | `u8` | `0x00` = Panel -> Box<br>`0xFF` = Box -> Panel OR Loopback                                  |
+| `2`         | Command ID  | `u8` | `0x0B` - Establishes packet context (See Section 3).                                        |
+| `3`         | Payload     | `u8` | Pulse length value                                                                          |
+| `4`         | Checksum    | `u8` | Sum of Bytes 0 through 3 modulo 256.                                                        |
+
+### 2.3 Pulsed Mode Length Setting 5-Byte Frame
+Used for tuning flash/strobe frequency.
+
+| Byte Offset | Field       | Type | Description                                                                                 |
+| :---------- | :---------- | :--- | :------------------------------------------------------------------------------------------ |
+| `0`         | Sequence ID | `u8` | Rolling counter (Relay box response echoes truncated lower nibble only; e.g. 0x51 -> 0x01). |
+| `1`         | Target      | `u8` | `0x00` = Panel -> Box<br>`0xFF` = Box -> Panel OR Loopback                                  |
+| `2`         | Command ID  | `u8` | `0x0B` - Establishes packet context (See Section 3).                                        |
+| `3`         | Payload     | `u8` | Pulse length value                                                                          |
+| `4`         | Checksum    | `u8` | Sum of Bytes 0 through 3 modulo 256.                                                        |
+### 2.4 Group Management
+Used exclusively to modify local UI button groupings within the panel firmware. The frame length is dynamic, calculating its total size based on the specific Action Flag and the number of switches being grouped ($N$).
+
+**Creation Frame Length:** $6 + N$ bytes.
+**Deletion Frame Length:** $6$ bytes.
+
+| Byte Offset  | Field              | Type | Description                                                                      |
+| :----------- | :----------------- | :--- | :------------------------------------------------------------------------------- |
+| `0`          | Sequence ID        | `u8` | Rolling counter.                                                                 |
+| `1`          | Target             | `u8` | 0xFF (Loopback)                                                                  |
+| `2`          | Command ID         | `u8` | `0x02`.                                                                          |
+| `3`          | Action Flag        | `u8` | `0x01` = Create/Update Group <br> `0x00` = Clear/Delete Group.                   |
+| `4`          | Group ID           | `u8` | Target Group Index (e.g., `0x01` for Group 1).                                   |
+| `5`          | Switch Count ($N$) | `u8` | **(Create Only)** The number of switches included in the group.                  |
+| `6` to `5+N` | Switch IDs         | `u8` | **(Create Only)** Sequential list of physical switch IDs (e.g., `0x01`, `0x04`). |
+| `End`        | Checksum           | `u8` | Sum of all preceding bytes modulo 256.                                           |
+
+*Note: When Action Flag is `0x00` (Delete), Bytes 5 through `5+N` are omitted entirely, and the Checksum shifts to Byte 5.
 
 ---
 
@@ -69,7 +98,8 @@ The semantic meaning of the payload nibbles shifts completely based on the `Comm
 | **`0x07`**          | Master Switch                  | Store/Recall Memory               | Relay Box (Outbound TX)   |
 | **`0x0C`**          | Backlight Control              | Backlight Dimming & Color Mapping | Panel Local (Loopback RX) |
 | **`0x02` **         | Group Creation and destruction | UI Logic Mapping                  | Panel Local (Loopback RX) |
-| 0x0B                | Parameter Set                  | Global Variable Configuration     | Relay Box (Outbound TX)   |
+| **`0x0B`**          | Pulse Length                   | Set Pulse Mode Length             | Relay Box (Outbound TX)   |
+| **`0x09`**          | Boot Signal                    | Unknown                           | Switch Panel (Inbound RX) |
 
 ---
 
@@ -78,6 +108,7 @@ The semantic meaning of the payload nibbles shifts completely based on the `Comm
 
 ### 4.1 Runtime Control Matrix (`0x08` / `0x18`)
 Payload bytes 4–7 map left-to-right to physical switches 1–8.
+* `Byte 3` = number of switches.
 * **Toggle:**
     * `0x0` = **State Low**. Relay is open.
     * `0x1` = **State High**. Relay is closed.
@@ -95,16 +126,23 @@ Freezes or restores current state.
 * `Byte 3 = 0x00` (Master ON): Turns on outputs in accordance to state saved in cache.
 * `Byte 3 = 0x01` (Master OFF): Turns off all outputs and instructs the box to cache the current state in memory.
 
-### 4.3 Switch Panel Backlight Settings (`0x0C`)
+### 4.3 Grouping (`0x02`)
+Groups switches to be activated together by pressing any included button. Limited to 4 switches per group in app. 
+* **Byte 3 (Create/Destroy):** 0x01 creates a group. 0x00 destroys a group by number.
+* **Byte 4 (Group ID):** Groups are numbered relative to existing groups. Group numbers do fill gaps. For example, if groups 1 and 2 are created, then group 1 is deleted, group 2 does not change, but creating a new group will make group 1.
+* **Byte 5 (Byte Count):** Count of switches in group.
+* **Bytes 5–\[N-1\] (Included Switches):** Included switches are listed by number, each receiving their own sequential byte. Differing switch modes should not be included in a group together.
+
+### 4.4 Switch Panel Backlight Settings (`0x0C`)
 Adjusts physical switch panel LED parameters.
 * **Byte 3 (Brightness):** 8-bit linear dimmer scale scaling from `0x01` (0.4% minimum brightness) to `0xFF` (100% full brightness).
 * **Bytes 4–6 (Color Channels):** Standard 24-bit TrueColor payload mapped linearly as:
     * `Byte 4` = **Red (R)** Intensity ($0 \rightarrow 255$)
     * `Byte 5` = **Green (G)** Intensity ($0 \rightarrow 255$)
     * `Byte 6` = **Blue (B)** Intensity ($0 \rightarrow 255$)
-* **Byte 7 (Padding):** Hardcoded to `0x00`.
+* **Byte 7 (White Channel):** Hard-coded to `0x00` in my unit. Suspected to represent white channel in some iterations.
 
-### 4.4 Global Flash Speed Configuration (`0x0B`)
+### 4.5 Global Flash Speed Configuration (`0x0B`)
 Modifies the internal flash intervals of the hardware-pulsed strobe configuration.
 * **Byte 3 (Pulse Interval Delay):** Value is length measured in milliseconds. 
     * `0x32` (Decimal 50) = Maximum length (Slowest strobe frequency).
@@ -120,14 +158,14 @@ The Slave relay box acts on a strict Query-Response schedule for wirebound comma
 ### 5.1 Standard Runtime Acknowledgment (9-Byte)
 When the relay box successfully processes a standard runtime command or configuration frame (`Command ID = 0x08`), it returns a 9-byte acknowledgment frame with modified headers:
 
-| Byte Offset | Field Name      | Expected Value | Functional Behavior                                                         |
-| :---------- | :-------------- | :------------- | :-------------------------------------------------------------------------- |
-| `0`         | Sequence ID     | `Varies`       | Direct echo of the rolling Sequence ID from the Query frame.                |
-| `1`         | Direction       | `0xFF`         | Outbound from Relay Box to Switch Panel.                                    |
-| `2`         | Ack Command ID  | `0x18`         | Shifts high nibble by 0x1 to indicate response.                             |
-| `3`         | Status Modifier | `0x00`         | Drops from `0x08` to `0x00` to indicate nominal execution with zero errors. |
-| `4–7`       | Payload Echo    | `Varies`       | Byte-for-byte echo of the received 4-byte switch matrix.                    |
-| `8`         | Checksum        | `Varies`       | Sum of Bytes 0 through 7 modulo 256.                                        |
+| Byte Offset | Field Name     | Expected Value | Functional Behavior                                                         |
+| :---------- | :------------- | :------------- | :-------------------------------------------------------------------------- |
+| `0`         | Sequence ID    | `Varies`       | Direct echo of the rolling Sequence ID from the Query frame.                |
+| `1`         | Direction      | `0xFF`         | Outbound from Relay Box to Switch Panel.                                    |
+| `2`         | Ack Command ID | `0x18`         | Shifts high nibble by 0x1 to indicate response.                             |
+| `3`         | Confirmation   | `0x00`         | Drops from `0x08` to `0x00` to indicate nominal execution with zero errors. |
+| `4–7`       | Payload Echo   | `Varies`       | Byte-for-byte echo of the received 4-byte switch matrix.                    |
+| `8`         | Checksum       | `Varies`       | Sum of Bytes 0 through 7 modulo 256.                                        |
 
 **Example:**
 * Query (Panel):    `25 00 08 08 38 88 88 88 05`
