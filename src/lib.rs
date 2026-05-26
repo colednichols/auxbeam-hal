@@ -15,6 +15,21 @@ pub enum SwitchState {
     UnusedOn = 0x07,
     Ignore = 0x08,
 }
+impl SwitchState {
+    pub fn from_u8(val: u8) -> Self {
+        match val {
+            0x00 => SwitchState::ToggleOff,
+            0x01 => SwitchState::ToggleOn,
+            0x02 => SwitchState::MomentOff,
+            0x03 => SwitchState::MomentOn,
+            0x04 => SwitchState::StrobeOff,
+            0x05 => SwitchState::StrobeOn,
+            0x06 => SwitchState::UnusedOff,
+            0x07 => SwitchState::UnusedOn,
+            _ => SwitchState::Ignore,
+        }
+    }
+}
 
 #[derive(Debug, Copy, Clone)]
 pub struct SwitchMatrix {
@@ -217,5 +232,180 @@ impl Command {
         frame[len - 1] = (checksum & 0xFF) as u8;
 
         (frame, len)
+    }
+}
+
+pub struct AuxbeamParser {
+    buffer: [u8; 24],
+    index: usize,
+}
+
+impl Default for AuxbeamParser {
+    fn default() -> Self {
+        Self {
+            buffer: [0x00; 24],
+            index: 0,
+        }
+    }
+}
+
+impl AuxbeamParser {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Feed a raw byte into the sliding window.
+    /// Returns Some((SequenceID, Command)) when a valid frame completes.
+    pub fn feed(&mut self, byte: u8) -> Option<(u8, Command)> {
+        // 1. Add byte to buffer
+        if self.index < 24 {
+            self.buffer[self.index] = byte;
+            self.index += 1;
+        } else {
+            self.shift_window();
+            self.buffer[23] = byte;
+        }
+
+        // 2. Check if we have enough bytes to process
+        let expected_len = self.get_expected_length();
+
+        if expected_len == 0 {
+            // Invalid command ID detected early. Shift to dump the bad header.
+            self.shift_window();
+            return None;
+        }
+
+        // 3. If we hit the expected length, validate and decode
+        if self.index == expected_len {
+            if self.calculate_checksum(expected_len - 1) == self.buffer[expected_len - 1] {
+                let event = self.decode_frame();
+                self.index = 0; // Reset for the next frame
+                return event;
+            } else {
+                // Checksum failed. Shift window by 1 to hunt for the real frame.
+                self.shift_window();
+            }
+        } else if self.index > expected_len {
+            self.shift_window();
+        }
+
+        None
+    }
+
+    /// Calculates the dynamic length based on the Command ID and frame headers.
+    /// Returns 0 if the Command ID is unknown/invalid.
+    fn get_expected_length(&self) -> usize {
+        if self.index < 3 {
+            return 99;
+        } // 99 = Keep waiting
+
+        match self.buffer[2] {
+            0x08 | 0x18 => {
+                if self.index < 4 {
+                    return 99;
+                }
+                let payload_len = (self.buffer[3] as usize + 1) / 2;
+                4 + payload_len + 1
+            }
+            0x0B | 0x1B => 5,
+            0x0C | 0x07 | 0x09 => 9,
+            0x02 => {
+                if self.index < 4 {
+                    return 99;
+                }
+                if self.buffer[3] == 0x00 {
+                    return 6;
+                } // Delete
+                if self.buffer[3] == 0x01 {
+                    if self.index < 6 {
+                        return 99;
+                    }
+                    return 7 + self.buffer[5] as usize; // Create
+                }
+                0 // Invalid Action Flag
+            }
+            _ => 0, // Invalid Command
+        }
+    }
+
+    /// Unpacks a validated byte buffer back into the Command enum
+    fn decode_frame(&self) -> Option<(u8, Command)> {
+        let seq = self.buffer[0];
+        let cmd = self.buffer[2];
+
+        let command = match cmd {
+            0x08 | 0x18 => {
+                let count = self.buffer[3];
+                let mut matrix = SwitchMatrix {
+                    count,
+                    states: [SwitchState::Ignore; 16],
+                };
+                let payload_len = (count as usize + 1) / 2;
+
+                for i in 0..payload_len {
+                    let byte = self.buffer[4 + i];
+                    if i * 2 < 16 {
+                        matrix.states[i * 2] = SwitchState::from_u8(byte >> 4);
+                    }
+                    if i * 2 + 1 < 16 {
+                        matrix.states[i * 2 + 1] = SwitchState::from_u8(byte & 0x0F);
+                    }
+                }
+                Command::Switch(matrix)
+            }
+            0x0C => Command::Backlight(PanelBacklightMatrix {
+                brightness: self.buffer[3],
+                red: self.buffer[4],
+                blue: self.buffer[5],
+                green: self.buffer[6],
+            }),
+            0x07 => {
+                let active = self.buffer[3] == 0x00;
+                Command::MasterSwitch(active, SwitchMatrix::default())
+            }
+            0x02 => {
+                let active = self.buffer[3] == 0x01;
+                let group_id = self.buffer[4];
+                let count = if active { self.buffer[5] } else { 0 };
+                let mut switches = [0x00; 16];
+
+                if active {
+                    let safe_n = (count as usize).min(16);
+                    for i in 0..safe_n {
+                        switches[i] = self.buffer[6 + i];
+                    }
+                }
+                Command::Group(GroupMatrix {
+                    active,
+                    group_id,
+                    count,
+                    switches,
+                })
+            }
+            0x0B | 0x1B => Command::Strobe(self.buffer[3]),
+            0x09 => {
+                let mut payload = [0x00; 5];
+                payload.copy_from_slice(&self.buffer[3..8]);
+                Command::BootSignal(payload)
+            }
+            _ => return None,
+        };
+
+        Some((seq, command))
+    }
+
+    fn calculate_checksum(&self, len: usize) -> u8 {
+        let mut sum: u16 = 0;
+        for i in 0..len {
+            sum = sum.wrapping_add(self.buffer[i] as u16);
+        }
+        (sum & 0xFF) as u8
+    }
+
+    fn shift_window(&mut self) {
+        for i in 1..24 {
+            self.buffer[i - 1] = self.buffer[i];
+        }
+        self.index = self.index.saturating_sub(1);
     }
 }
