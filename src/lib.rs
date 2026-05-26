@@ -57,6 +57,25 @@ impl SwitchMatrix {
 
         (payload, payload_len)
     }
+
+    pub fn set_multiple(&mut self, switches: &[usize], state: SwitchState) {
+        for &switch in switches {
+            // Ignore out-of-bounds input
+            if switch > 0 && switch <= self.count as usize {
+                self.states[switch - 1] = state;
+            }
+        }
+    }
+
+    /// Convenience wrapper to latch multiple switches ON.
+    pub fn turn_on(&mut self, switches: &[usize]) {
+        self.set_multiple(switches, SwitchState::ToggleOn);
+    }
+
+    /// Convenience wrapper to latch multiple switches OFF.
+    pub fn turn_off(&mut self, switches: &[usize]) {
+        self.set_multiple(switches, SwitchState::ToggleOff);
+    }
 }
 
 #[derive(Debug, Copy, Clone, Default)]
@@ -116,10 +135,87 @@ impl GroupMatrix {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[repr(u8)]
+pub enum FrameDestination {
+    Box = 0x00,
+    Panel = 0xFF,
+}
+
 #[derive(Debug, Copy, Clone)]
 pub enum Command {
-    Switch(SwitchMatrix),            // 0x08
-    MasterSwitch(SwitchMatrix),      // 0x07
-    Backlight(PanelBacklightMatrix), // 0x0C
-    Group(GroupMatrix),              // 0x02
+    Switch(SwitchMatrix),             // 0x08 / 0x18
+    MasterSwitch(bool, SwitchMatrix), // 0x07
+    Backlight(PanelBacklightMatrix),  // 0x0C
+    Group(GroupMatrix),               // 0x02
+    Strobe(u8),                       // 0x0B / 0x1B
+    BootSignal([u8; 5]),              // 0x09
+}
+impl Command {
+    // Serialize command into wire-ready frame
+    // Returns frame as buffer and valid length
+    pub fn as_frame(&self, sequence_id: u8) -> ([u8; 24], usize) {
+        let mut frame = [0x00; 24];
+        frame[0] = sequence_id;
+
+        let len = match self {
+            Command::Switch(matrix) => {
+                frame[1] = FrameDestination::Box as u8;
+                frame[2] = 0x08; // Command ID
+                frame[3] = matrix.count;
+
+                let (payload, p_len) = matrix.to_bytes();
+                frame[4..4 + p_len].copy_from_slice(&payload[..p_len]);
+                4 + p_len + 1 // Header + Payload + Checksum
+            }
+            Command::MasterSwitch(master_state, matrix) => {
+                frame[1] = FrameDestination::Box as u8;
+                frame[2] = 0x07;
+                frame[3] = if *master_state { 0x00 } else { 0x01 };
+
+                let (payload, p_len) = matrix.to_bytes();
+                frame[4..4 + p_len].copy_from_slice(&payload[..p_len]);
+                4 + p_len + 1 // Header + Payload + Checksum
+            }
+            Command::Backlight(backlight_param) => {
+                frame[1] = FrameDestination::Panel as u8;
+                frame[2] = 0x0C;
+
+                let payload = backlight_param.to_bytes();
+                frame[3..3 + 5].copy_from_slice(&payload[..5]);
+                3 + 5 + 1
+            }
+            Command::Group(matrix) => {
+                frame[1] = FrameDestination::Panel as u8;
+                frame[2] = 0x02;
+
+                let (payload, p_len) = matrix.to_bytes();
+                frame[3..3 + p_len].copy_from_slice(&payload[..p_len]);
+                4 + p_len + 1 // Header + Payload + Checksum
+            }
+            Command::Strobe(strobe_length) => {
+                frame[1] = FrameDestination::Box as u8;
+                frame[2] = 0x0B;
+                frame[3] = *strobe_length;
+
+                5
+            }
+            Command::BootSignal(payload) => {
+                frame[1] = 0xFF;
+                frame[2] = 0x09;
+
+                frame[3..8].copy_from_slice(payload);
+                9
+            }
+        };
+
+        // Modulo 256 Checksum Calculator
+        let mut checksum: u16 = 0;
+        for i in 0..(len - 1) {
+            checksum = checksum.wrapping_add(frame[i] as u16);
+        }
+        frame[len - 1] = (checksum & 0xFF) as u8;
+
+        (frame, len)
+    }
 }
