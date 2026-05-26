@@ -2,19 +2,33 @@
 
 use core::u8;
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[repr(u8)]
+pub enum SwitchState {
+    ToggleOff = 0x00,
+    ToggleOn = 0x01,
+    MomentOff = 0x02,
+    MomentOn = 0x03,
+    StrobeOff = 0x04,
+    StrobeOn = 0x05,
+    UnusedOff = 0x06,
+    UnusedOn = 0x07,
+    Ignore = 0x08,
+}
+
 #[derive(Debug, Copy, Clone)]
 pub struct SwitchMatrix {
     /// The number of physical switches on this specific panel (e.g., 4, 6, 8)
     pub count: u8,
     /// The resting or active state of each switch (Index 0 = Switch 1)
-    pub states: [u8; 16],
+    pub states: [SwitchState; 16],
 }
 
 impl Default for SwitchMatrix {
     fn default() -> Self {
         Self {
-            count: 8,           // Default to 8-gang if not specified
-            states: [0x08; 16], // 0x08 is the "Ignore Mask" default
+            count: 8, // Default to 8-gang if not specified
+            states: [SwitchState::Ignore; 16],
         }
     }
 }
@@ -26,8 +40,16 @@ impl SwitchMatrix {
         let payload_len = (self.count as usize + 1) / 2;
 
         for i in 0..payload_len {
-            let high_switch = self.states.get(i * 2).copied().unwrap_or(0x08);
-            let low_switch = self.states.get((i * 2) + 1).copied().unwrap_or(0x08);
+            let high_switch = self
+                .states
+                .get(i * 2)
+                .copied()
+                .unwrap_or(SwitchState::Ignore) as u8;
+            let low_switch = self
+                .states
+                .get((i * 2) + 1)
+                .copied()
+                .unwrap_or(SwitchState::Ignore) as u8;
 
             // Shift the first switch to the high nibble, mask the second to the low nibble
             payload[i] = (high_switch << 4) | (low_switch & 0x0F);
