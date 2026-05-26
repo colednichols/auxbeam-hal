@@ -206,7 +206,7 @@ impl Command {
 
                 let (payload, p_len) = matrix.to_bytes();
                 frame[3..3 + p_len].copy_from_slice(&payload[..p_len]);
-                4 + p_len + 1 // Header + Payload + Checksum
+                3 + p_len + 1 // Header + Payload + Checksum
             }
             Command::Strobe(strobe_length) => {
                 frame[1] = FrameDestination::Box as u8;
@@ -309,6 +309,7 @@ impl AuxbeamParser {
             }
             0x0B | 0x1B => 5,
             0x0C | 0x07 | 0x09 => 9,
+            0x17 => 10,
             0x02 => {
                 if self.index < 4 {
                     return 99;
@@ -359,8 +360,15 @@ impl AuxbeamParser {
                 blue: self.buffer[5],
                 green: self.buffer[6],
             }),
-            0x07 => {
-                let active = self.buffer[3] == 0x00;
+            0x07 | 0x17 => {
+                // 0x07 puts the target state at index 3.
+                // 0x17 puts the current state at 3, and the set state at 4.
+                let state_byte = if cmd == 0x17 {
+                    self.buffer[4]
+                } else {
+                    self.buffer[3]
+                };
+                let active = state_byte == 0x00;
                 Command::MasterSwitch(active, SwitchMatrix::default())
             }
             0x02 => {
