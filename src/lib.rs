@@ -392,8 +392,7 @@ impl AuxbeamParser {
             }
             0x0B | 0x1B => Command::Strobe(self.buffer[3]),
             0x09 => {
-                let mut payload = [0x00; 5];
-                payload.copy_from_slice(&self.buffer[3..8]);
+                let payload: [u8; 5] = self.buffer[3..8].try_into().unwrap();
                 Command::BootSignal(payload)
             }
             _ => return None,
