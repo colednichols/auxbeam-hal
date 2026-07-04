@@ -16,12 +16,12 @@ This protocol was reverse-engineered and tested against the following hardware:
 
 ## Installation
 Add the library to your Cargo.toml:
-```Cargo.toml
+```toml
 [dependencies]
 auxbeam_hal = "0.1.0"
 ```
 ## Usage Example: Closed-Loop Controller
-```
+```rust
 use auxbeam_hal::{AuxbeamParser, Command, SwitchMatrix, SwitchState};
 // Note: Requires an underlying hardware UART driver for your specific MCU
 
