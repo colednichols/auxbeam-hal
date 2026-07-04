@@ -15,8 +15,8 @@ pub enum SwitchState {
     UnusedOn = 0x07,
     Ignore = 0x08,
 }
-impl SwitchState {
-    pub fn from_u8(val: u8) -> Self {
+impl From<u8> for SwitchState {
+    fn from(val: u8) -> Self {
         match val {
             0x00 => SwitchState::ToggleOff,
             0x01 => SwitchState::ToggleOn,
@@ -225,11 +225,8 @@ impl Command {
         };
 
         // Modulo 256 Checksum Calculator
-        let mut checksum: u16 = 0;
-        for i in 0..(len - 1) {
-            checksum = checksum.wrapping_add(frame[i] as u16);
-        }
-        frame[len - 1] = (checksum & 0xFF) as u8;
+        let checksum= frame[..len - 1].iter().fold(0u8, |acc, &x| acc.wrapping_add(x)); 
+        frame[len - 1] = checksum;
 
         (frame, len)
     }
@@ -349,10 +346,10 @@ impl AuxbeamParser {
                 for i in 0..payload_len {
                     let byte = self.buffer[4 + i];
                     if i * 2 < 16 {
-                        matrix.states[i * 2] = SwitchState::from_u8(byte >> 4);
+                        matrix.states[i * 2] = SwitchState::from(byte >> 4);
                     }
                     if i * 2 + 1 < 16 {
-                        matrix.states[i * 2 + 1] = SwitchState::from_u8(byte & 0x0F);
+                        matrix.states[i * 2 + 1] = SwitchState::from(byte & 0x0F);
                     }
                 }
                 Command::Switch(matrix)
@@ -406,11 +403,7 @@ impl AuxbeamParser {
     }
 
     fn calculate_checksum(&self, len: usize) -> u8 {
-        let mut sum: u16 = 0;
-        for i in 0..len {
-            sum = sum.wrapping_add(self.buffer[i] as u16);
-        }
-        (sum & 0xFF) as u8
+        self.buffer[..len].iter().fold(0u8, |acc, &x| acc.wrapping_add(x))
     }
 
     fn shift_window(&mut self) {
