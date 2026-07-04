@@ -2,7 +2,7 @@
 
 use core::u8;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Default, Debug, Copy, Clone, PartialEq, Eq)]
 #[repr(u8)]
 pub enum SwitchState {
     ToggleOff = 0x00,
@@ -13,6 +13,7 @@ pub enum SwitchState {
     StrobeOn = 0x05,
     UnusedOff = 0x06,
     UnusedOn = 0x07,
+    #[default]
     Ignore = 0x08,
 }
 impl From<u8> for SwitchState {
