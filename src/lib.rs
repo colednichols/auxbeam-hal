@@ -371,9 +371,7 @@ impl AuxbeamParser {
 
                 if active {
                     let safe_n = (count as usize).min(16);
-                    for i in 0..safe_n {
-                        switches[i] = self.buffer[6 + i];
-                    }
+                    switches[..safe_n].copy_from_slice(&self.buffer[6..6 + safe_n]);
                 }
                 Command::Group(GroupMatrix {
                     active,
