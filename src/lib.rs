@@ -52,24 +52,16 @@ impl SwitchMatrix {
     // Return matrix and length in tuple
     pub fn to_bytes(&self) -> ([u8; 8], usize) {
         let mut payload = [0x00; 8];
-        let payload_len = (self.count as usize + 1) / 2;
+        let active_states = &self.states[..self.count as usize];
 
-        for i in 0..payload_len {
-            let high_switch = self
-                .states
-                .get(i * 2)
-                .copied()
-                .unwrap_or(SwitchState::Ignore) as u8;
-            let low_switch = self
-                .states
-                .get((i * 2) + 1)
-                .copied()
-                .unwrap_or(SwitchState::Ignore) as u8;
-
-            // Shift the first switch to the high nibble, mask the second to the low nibble
+        for (i, pair) in active_states.chunks(2).enumerate() {
+            let high_switch = pair[0] as u8;
+            let low_switch = pair.get(1).copied().unwrap_or(SwitchState::Ignore) as u8;
+            
             payload[i] = (high_switch << 4) | (low_switch & 0x0F);
         }
 
+        let payload_len = (self.count as usize + 1) / 2;
         (payload, payload_len)
     }
 
