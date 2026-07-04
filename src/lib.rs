@@ -134,7 +134,7 @@ impl GroupMatrix {
             let safe_n = (self.count as usize).min(16);
 
             for i in 0..safe_n {
-                // Each switch gets its own entire byte (no bit-shifting needed)
+                // Each switch gets its own entire byte
                 payload[3 + i] = self.switches[i];
             }
 
@@ -266,16 +266,19 @@ impl AuxbeamParser {
             self.buffer[23] = byte;
         }
 
-        // 2. Check if we have enough bytes to process
-        let expected_len = self.get_expected_length();
-
-        if expected_len == 0 {
-            // Invalid command ID detected early. Shift to dump the bad header.
-            self.shift_window();
-            return None;
-        }
+        // 2. Check if we have enough bytes to process, unwrap the length
+        let expected_len = match self.get_expected_length() {
+            None => return None, // Keep waiting for more bytes, do not shift.
+            Some(0) => {
+                // Invalid command ID detected. Shift to dump the bad header.
+                self.shift_window();
+                return None;
+            }
+            Some(len) => len, // Valid length extracted, proceed to step 3.
+        };
 
         // 3. If we hit the expected length, validate and decode
+        // (expected_len is now a standard usize, so this comparison works)
         if self.index == expected_len {
             if self.calculate_checksum(expected_len - 1) == self.buffer[expected_len - 1] {
                 let event = self.decode_frame();
@@ -294,38 +297,38 @@ impl AuxbeamParser {
 
     /// Calculates the dynamic length based on the Command ID and frame headers.
     /// Returns 0 if the Command ID is unknown/invalid.
-    fn get_expected_length(&self) -> usize {
+    fn get_expected_length(&self) -> Option<usize> {
         if self.index < 3 {
-            return 99;
-        } // 99 = Keep waiting
+            return None;
+        } // None = Keep waiting
 
         match self.buffer[2] {
             0x08 | 0x18 => {
                 if self.index < 4 {
-                    return 99;
+                    return None;
                 }
                 let payload_len = (self.buffer[3] as usize + 1) / 2;
-                4 + payload_len + 1
+                Some(4 + payload_len + 1)
             }
-            0x0B | 0x1B => 5,
-            0x0C | 0x07 | 0x09 => 9,
-            0x17 => 10,
+            0x0B | 0x1B => Some(5),
+            0x0C | 0x07 | 0x09 => Some(9),
+            0x17 => Some(10),
             0x02 => {
                 if self.index < 4 {
-                    return 99;
+                    return None;
                 }
                 if self.buffer[3] == 0x00 {
-                    return 6;
+                    return Some(6);
                 } // Delete
                 if self.buffer[3] == 0x01 {
                     if self.index < 6 {
-                        return 99;
+                        return None;
                     }
-                    return 7 + self.buffer[5] as usize; // Create
+                    return Some(7 + self.buffer[5] as usize); // Create
                 }
-                0 // Invalid Action Flag
+                Some(0) // Invalid Action Flag
             }
-            _ => 0, // Invalid Command
+            _ => Some(0), // Invalid Command
         }
     }
 
