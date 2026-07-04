@@ -414,9 +414,7 @@ impl AuxbeamParser {
     }
 
     fn shift_window(&mut self) {
-        for i in 1..24 {
-            self.buffer[i - 1] = self.buffer[i];
-        }
+        self.buffer.copy_within(1..24, 0);
         self.index = self.index.saturating_sub(1);
     }
 }
