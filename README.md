@@ -13,7 +13,8 @@ This library implements the reverse-engineered UART protocol used between the sw
 This protocol was reverse-engineered and tested against the following hardware:
 * Tested: Auxbeam 8-Gang Switch Panel (Standard RGB model)
 * Connector on relay box: GND, 3.3 V, RX, TX (Panel/controller RX connects to relay box TX and vise versa)
-*Note: The protocol structure suggests it will likely work with other models, but this is unverified. I have done my best to make this scalable to other models.*
+
+*Note: The protocol structure suggests it will likely work with other models, but this is unverified. I have done my best to make this scalable to other models. Acknolegent parsing is still a work in progress.*
 
 ## Installation
 Add the library to your Cargo.toml:
