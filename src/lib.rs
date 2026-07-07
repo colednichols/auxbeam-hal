@@ -253,7 +253,7 @@ impl AuxbeamParser {
         self.buffer[self.index] = byte;
         self.index += 1;
 
-        // 2. Check if we have enough bytes to process, unwrap the length
+        // 3. Check if we have enough bytes to process, unwrap the length
         let expected_len = match self.get_expected_length() {
             None => return None, // Keep waiting for more bytes, do not shift.
             Some(0) => {
@@ -264,7 +264,7 @@ impl AuxbeamParser {
             Some(len) => len, // Valid length extracted, proceed to step 3.
         };
 
-        // 3. If we hit the expected length, validate and decode
+        // 4. If we hit the expected length, validate and decode
         // (expected_len is now a standard usize, so this comparison works)
         if self.index == expected_len {
             if self.calculate_checksum(expected_len - 1) == self.buffer[expected_len - 1] {
@@ -290,13 +290,14 @@ impl AuxbeamParser {
         } // None = Keep waiting
 
         match self.buffer[2] {
-            0x08 | 0x18 => {
+            0x08 => {
                 if self.index < 4 {
                     return None;
                 }
                 let payload_len = (self.buffer[3] as usize + 1) / 2;
                 Some(4 + payload_len + 1)
             }
+            0x18 => Some(9),
             0x0B | 0x1B => Some(5),
             0x0C | 0x07 | 0x09 => Some(9),
             0x17 => Some(10),
@@ -325,21 +326,31 @@ impl AuxbeamParser {
         let cmd = self.buffer[2];
 
         let command = match cmd {
-            0x08 | 0x18 => {
-                let count = self.buffer[3];
-                let mut matrix = SwitchMatrix::new(count);
-                let payload_len = (count as usize + 1) / 2;
-
-                for i in 0..payload_len {
-                    let byte = self.buffer[4 + i];
-                    if i * 2 < 16 {
-                        matrix.states[i * 2] = SwitchState::from(byte >> 4);
-                    }
-                    if i * 2 + 1 < 16 {
-                        matrix.states[i * 2 + 1] = SwitchState::from(byte & 0x0F);
-                    }
+            0x08 => {
+                let count = self.buffer[3].min(16);
+                let mut states = [SwitchState::Ignore; 16];
+                
+                // Unpack inline
+                for i in 0..count as usize {
+                    let byte = self.buffer[4 + (i / 2)];
+                    let val = if i % 2 == 0 { byte >> 4 } else { byte & 0x0F };
+                    states[i] = SwitchState::from(val);
                 }
-                Command::Switch(matrix)
+                
+                Command::Switch(SwitchMatrix { count, states })
+            }
+            0x18 => {
+                let count = 8; // Box doesn't send count in byte 3, assume 8-gang
+                let mut states = [SwitchState::Ignore; 16];
+                
+                // Unpack inline
+                for i in 0..count as usize {
+                    let byte = self.buffer[4 + (i / 2)];
+                    let val = if i % 2 == 0 { byte >> 4 } else { byte & 0x0F };
+                    states[i] = SwitchState::from(val);
+                }
+                
+                Command::Switch(SwitchMatrix { count, states })
             }
             0x0C => Command::Backlight(PanelBacklightMatrix {
                 brightness: self.buffer[3],
