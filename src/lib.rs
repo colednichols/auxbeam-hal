@@ -1,7 +1,5 @@
 #![no_std]
 
-use core::u8;
-
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq)]
 #[repr(u8)]
 pub enum SwitchState {
@@ -34,26 +32,25 @@ impl From<u8> for SwitchState {
 
 #[derive(Debug, Copy, Clone)]
 pub struct SwitchMatrix {
-    /// The number of physical switches on this specific panel (e.g., 4, 6, 8)
     pub count: u8,
-    /// The resting or active state of each switch (Index 0 = Switch 1)
     pub states: [SwitchState; 16],
 }
 
-impl Default for SwitchMatrix {
-    fn default() -> Self {
+impl SwitchMatrix {
+    /// Initialize a matrix for a specific panel size (e.g., 6, 8, 12) up to 16 max.
+    pub fn new(gang_count: u8) -> Self {
         Self {
-            count: 8, // Default to 8-gang if not specified
+            count: gang_count,
             states: [SwitchState::Ignore; 16],
         }
     }
-}
 
-impl SwitchMatrix {
-    // Return matrix and length in tuple
     pub fn to_bytes(&self) -> ([u8; 8], usize) {
         let mut payload = [0x00; 8];
-        let active_states = &self.states[..self.count as usize];
+        
+        // Clamp the count to prevent slice panics and array overflows
+        let safe_count = (self.count as usize).min(16);
+        let active_states = &self.states[..safe_count];
 
         for (i, pair) in active_states.chunks(2).enumerate() {
             let high_switch = pair[0] as u8;
@@ -62,7 +59,7 @@ impl SwitchMatrix {
             payload[i] = (high_switch << 4) | (low_switch & 0x0F);
         }
 
-        let payload_len = (self.count as usize + 1) / 2;
+        let payload_len = (safe_count + 1) / 2;
         (payload, payload_len)
     }
 
@@ -170,7 +167,7 @@ impl Command {
             Command::Switch(matrix) => {
                 frame[1] = FrameDestination::Box as u8;
                 frame[2] = 0x08; // Command ID
-                frame[3] = matrix.count;
+                frame[3] = matrix.count.min(16);
 
                 let (payload, p_len) = matrix.to_bytes();
                 frame[4..4 + p_len].copy_from_slice(&payload[..p_len]);
@@ -247,14 +244,14 @@ impl AuxbeamParser {
     /// Feed a raw byte into the sliding window.
     /// Returns Some((SequenceID, Command)) when a valid frame completes.
     pub fn feed(&mut self, byte: u8) -> Option<(u8, Command)> {
-        // 1. Add byte to buffer
-        if self.index < 24 {
-            self.buffer[self.index] = byte;
-            self.index += 1;
-        } else {
-            self.shift_window();
-            self.buffer[23] = byte;
+        // 1. Make room in the buffer if it is currently full
+        if self.index == 24 {
+            self.shift_window(); // Drops index to 23
         }
+        
+        // 2. Insert the new byte and advance the tracker
+        self.buffer[self.index] = byte;
+        self.index += 1;
 
         // 2. Check if we have enough bytes to process, unwrap the length
         let expected_len = match self.get_expected_length() {
@@ -330,10 +327,7 @@ impl AuxbeamParser {
         let command = match cmd {
             0x08 | 0x18 => {
                 let count = self.buffer[3];
-                let mut matrix = SwitchMatrix {
-                    count,
-                    states: [SwitchState::Ignore; 16],
-                };
+                let mut matrix = SwitchMatrix::new(count);
                 let payload_len = (count as usize + 1) / 2;
 
                 for i in 0..payload_len {
@@ -362,7 +356,7 @@ impl AuxbeamParser {
                     self.buffer[3]
                 };
                 let active = state_byte == 0x00;
-                Command::MasterSwitch(active, SwitchMatrix::default())
+                Command::MasterSwitch(active, SwitchMatrix::new(0))
             }
             0x02 => {
                 let active = self.buffer[3] == 0x01;
